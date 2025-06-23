@@ -85,7 +85,11 @@ check_current_settings() {
         fi
     done
 
-    echo "$all_applied"
+    if $all_applied; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 if [[ "$EUID" -ne 0 ]]; then
@@ -140,9 +144,6 @@ else
         log_message "Dir '$SSHD_CONFIG_D_DIR':"
         find "$SSHD_CONFIG_D_DIR" -type f -name "*.conf" 2>/dev/null | while read -r f; do
             log_message "  - $f"
-            # log_message "    --- file $f ---"
-            # sudo cat "$f"
-            # log_message "    ---------------------"
         done
         if ! find "$SSHD_CONFIG_D_DIR" -type f -name "*.conf" -print -quit | grep -q .; then
              log_message "  (The directory exists, but does not contain any files .conf)"

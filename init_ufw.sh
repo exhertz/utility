@@ -52,7 +52,7 @@ get_user_input() {
 
 if [[ "$EUID" -ne 0 ]]; then
     log_message "Error: Script must be run with root privileges."
-    log_message "Usage: sudo ./init_ufw.sh"
+    log_message "Usage: sudo $0"
     exit 1
 fi
 

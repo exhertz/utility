@@ -5,7 +5,7 @@
 # Install SSH pub key
 
 ```bash
-curl -sL https://raw.githubusercontent.com/exhertz/utility/main/install_ssh_key.sh | bash -s -- /path/to_public_key.pub
+bash <(curl -sL https://raw.githubusercontent.com/exhertz/utility/main/install_ssh_key.sh) /path/to_public_key.pub
 ```
 
 <details>

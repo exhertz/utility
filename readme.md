@@ -2,54 +2,56 @@
 
 ---
 
+# Create sudo user
+
+```bash
+bash <(curl -sL https://exhertz.github.io/utility/create_sudo_user.sh)
+```
+
+---
+
 # Install SSH pub key
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/exhertz/utility/main/install_ssh_key.sh) /path/to_public_key.pub
+bash <(curl -sL https://exhertz.github.io/utility/install_ssh_key.sh) /path/to_public_key.pub
 ```
-
-<details>
-  <summary>full</summary>
-
-```bash
-curl -o install_ssh_key.sh https://raw.githubusercontent.com/exhertz/utility/main/install_ssh_key.sh
-chmod +x install_ssh_key.sh
-./install_ssh_key.sh /path/to/your/public_key.pub
-```
-</details>
 
 ---
 
 # Enable secure SSH params (sshd_config)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/exhertz/utility/main/secure_sshd_config.sh | bash
+bash <(curl -sL https://exhertz.github.io/utility/secure_sshd_config.sh)
 ```
-
-<details>
-  <summary>full</summary>
-
-```bash
-curl -o secure_sshd_config.sh https://raw.githubusercontent.com/exhertz/utility/main/secure_sshd_config.sh
-chmod +x secure_sshd_config.sh
-./secure_sshd_config.sh
-```
-</details>
 
 ---
 
 # Install and setup UFW
 
 ```bash
-curl -sL https://raw.githubusercontent.com/exhertz/utility/main/init_ufw.sh | bash
+bash <(curl -sL https://exhertz.github.io/utility/init_ufw.sh)
 ```
 
-<details>
-  <summary>full</summary>
+---
+
+# Install fail2ban
 
 ```bash
-curl -o init_ufw.sh https://raw.githubusercontent.com/exhertz/utility/main/init_ufw.sh
-chmod +x init_ufw.sh
-./init_ufw.sh
+bash <(curl -sL https://exhertz.github.io/utility/install_fail2ban.sh)
 ```
-</details>
+
+---
+
+# Wireguard
+
+## Server setup
+
+```bash
+bash <(curl -sL https://exhertz.github.io/utility/wg/wg-server-setup.sh)
+```
+
+## Client setup
+
+```bash
+bash <(curl -sL https://exhertz.github.io/utility/wg/wg-client-setup.sh)
+```

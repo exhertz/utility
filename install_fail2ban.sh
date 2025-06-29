@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [[ "$EUID" -ne 0 ]]; then
-    log_message "Error: Script must be run with root privileges."
-    log_message "Usage: sudo $0"
+    echo "Error: Script must be run with root privileges."
+    echo "Usage: sudo $0"
     exit 1
 fi
 

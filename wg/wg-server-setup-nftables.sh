@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# WireGuard Server Setup Script (FIXED VERSION)
+# WireGuard Server Setup Script with nftables
 # Author: Assistant
-# Description: Sets up a VPN server with proper UFW configuration
+# Description: Sets up a VPN server with proper UFW and nftables configuration
 
 set -e
 
@@ -46,12 +46,12 @@ if [[ $EUID -ne 0 ]]; then
    error "This script must be run as root."
 fi
 
-log "Starting WireGuard server setup..."
+log "Starting WireGuard server setup with nftables..."
 
 # Update system and install packages
 log "Updating system and installing necessary packages..."
 apt update
-apt install -y wireguard wireguard-tools ufw cron curl
+apt install -y wireguard wireguard-tools ufw cron curl nftables
 
 # КРИТИЧНО: Сначала настроим UFW правильно, чтобы не потерять SSH
 log "Configuring UFW with safe defaults..."
@@ -123,9 +123,44 @@ CLIENT_PRIVATE_KEY=$(cat client_private.key)
 CLIENT_PUBLIC_KEY=$(cat client_public.key)
 
 # Create server configuration
-# PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE
-# PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE
 log "Creating server configuration..."
+
+NFT_CONFIG="/etc/nftables.conf"
+
+cat > "$NFT_CONFIG" << EOF
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet nat {
+    chain prerouting {
+        type nat hook prerouting priority -100; policy accept;
+        iifname "$MAIN_INTERFACE" tcp dport $SSH_FORWARD_PORT1 dnat ip to $SSH_FORWARD_IP1:22
+        iifname "$MAIN_INTERFACE" tcp dport $SSH_FORWARD_PORT2 dnat ip to $SSH_FORWARD_IP2:22
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority 100; policy accept;
+        oifname "$MAIN_INTERFACE" ip saddr 10.0.0.0/24 masquerade
+    }
+}
+
+table inet filter {
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+        iifname "$WG_INTERFACE" accept
+        oifname "$WG_INTERFACE" accept
+        # разрешить ЯВНУЮ пересылку для SSH портов
+        tcp dport 22 ip daddr { $SSH_FORWARD_IP1, $SSH_FORWARD_IP2 } accept
+    }
+}
+EOF
+
+# Apply nftables configuration
+log "Applying nftables rules..."
+nft -f $NFT_CONFIG
+systemctl enable nftables.service
+
 cat > /etc/wireguard/$WG_INTERFACE.conf << EOF
 [Interface]
 PrivateKey = $SERVER_PRIVATE_KEY
@@ -133,8 +168,8 @@ Address = $WG_SERVER_IP/24
 ListenPort = $WG_PORT
 SaveConfig = false
 
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE; iptables -t nat -A PREROUTING -i $MAIN_INTERFACE -p tcp --dport $SSH_FORWARD_PORT1 -j DNAT --to-destination $SSH_FORWARD_IP1:22; iptables -t nat -A PREROUTING -i $MAIN_INTERFACE -p tcp --dport $SSH_FORWARD_PORT2 -j DNAT --to-destination $SSH_FORWARD_IP2:22
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE; iptables -t nat -D PREROUTING -i $MAIN_INTERFACE -p tcp --dport $SSH_FORWARD_PORT1 -j DNAT --to-destination $SSH_FORWARD_IP1:22; iptables -t nat -D PREROUTING -i $MAIN_INTERFACE -p tcp --dport $SSH_FORWARD_PORT2 -j DNAT --to-destination $SSH_FORWARD_IP2:22
+PostUp = nft -f $NFT_CONFIG
+PostDown = nft flush ruleset
 
 [Peer]
 PublicKey = $CLIENT_PUBLIC_KEY
@@ -159,40 +194,6 @@ EOF
 # Set file permissions
 chmod 600 /etc/wireguard/*.conf
 chmod 600 /etc/wireguard/*.key
-
-# Configure UFW for WireGuard traffic forwarding (ПОСЛЕ основных правил)
-log "Configuring UFW forwarding rules..."
-
-# Добавить правила форвардинга в UFW конфиг
-UFW_BEFORE_RULES="/etc/ufw/before.rules"
-
-# Создать бэкап
-cp $UFW_BEFORE_RULES $UFW_BEFORE_RULES.backup
-
-# Добавить NAT правила для SSH и WireGuard в начало файла, но ОСТОРОЖНО
-if ! grep -q "NAT rules for SSH port forwarding" $UFW_BEFORE_RULES; then
-    sed -i '10i\
-# NAT rules for SSH port forwarding\
-*nat\
-:PREROUTING ACCEPT [0:0]\
--A PREROUTING -i '$MAIN_INTERFACE' -p tcp --dport '$SSH_FORWARD_PORT1' -j DNAT --to-destination '$SSH_FORWARD_IP1':22\
--A PREROUTING -i '$MAIN_INTERFACE' -p tcp --dport '$SSH_FORWARD_PORT2' -j DNAT --to-destination '$SSH_FORWARD_IP2':22\
-COMMIT\
-\
-# NAT rules for WireGuard\
-*nat\
-:POSTROUTING ACCEPT [0:0]\
--A POSTROUTING -s '$WG_NET' -o '$MAIN_INTERFACE' -j MASQUERADE\
-COMMIT\
-' $UFW_BEFORE_RULES
-
-    log "NAT rules added to UFW configuration"
-else
-    log "NAT rules already exist in UFW configuration"
-fi
-
-# Перезагрузить UFW
-ufw reload
 
 # Enable and start WireGuard
 log "Starting WireGuard server..."

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+apt install sudo -y
+
 if [[ "$EUID" -ne 0 ]]; then
     log_message "Error: Script must be run with root privileges."
     log_message "Usage: sudo $0"

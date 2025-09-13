@@ -2,6 +2,7 @@
 
 # Copyright (c) 2021-2025 community-scripts ORG
 # Author: MickLesk (CanbiZ)
+# Modifications & Additions: exhertz 
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 
 source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func)
@@ -139,13 +140,36 @@ function check_root() {
 }
 
 function pve_check() {
-  if ! pveversion | grep -Eq "pve-manager/8\.[1-4](\.[0-9]+)*"; then
-    msg_error "${CROSS}${RD}This version of Proxmox Virtual Environment is not supported"
-    echo -e "Requires Proxmox Virtual Environment Version 8.1 or later."
-    echo -e "Exiting..."
-    sleep 2
-    exit
+  local PVE_VER
+  PVE_VER="$(pveversion | awk -F'/' '{print $2}' | awk -F'-' '{print $1}')"
+
+  # Check for Proxmox VE 8.x
+  if [[ "$PVE_VER" =~ ^8\.([0-9]+) ]]; then
+    local MINOR="${BASH_REMATCH[1]}"
+    if ((MINOR < 1 || MINOR > 4)); then
+      msg_error "This version of Proxmox VE is not supported."
+      echo -e "Required: Proxmox VE version 8.1 – 8.4"
+      exit 1
+    fi
+    return 0
   fi
+
+  # Check for Proxmox VE 9.x (Beta) — require confirmation
+  if [[ "$PVE_VER" =~ ^9\.([0-9]+) ]]; then
+    if whiptail --title "Proxmox 9.x Detected (Beta)" \
+      --yesno "You are using Proxmox VE $PVE_VER, which is currently in Beta state.\n\nThis version is experimentally supported.\n\nDo you want to proceed anyway?" 12 70; then
+      msg_ok "Confirmed: Continuing with Proxmox VE $PVE_VER"
+      return 0
+    else
+      msg_error "Aborted by user: Proxmox VE 9.x was not confirmed."
+      exit 1
+    fi
+  fi
+
+  # All other unsupported versions
+  msg_error "This version of Proxmox VE is not supported."
+  echo -e "Supported versions: Proxmox VE 8.1 – 8.4 or 9.x (Beta, with confirmation)"
+  exit 1
 }
 
 function arch_check() {
@@ -376,6 +400,14 @@ function advanced_settings() {
     exit-script
   fi
 
+  if (whiptail --backtitle "Proxmox VE Helper Scripts" --title "CLOUD-INIT" --yesno "Configure the VM with Cloud-init?" --defaultno 10 58); then
+    echo -e "${CLOUD}${BOLD}${DGN}Configure Cloud-init: ${BGN}yes${CL}"
+    CLOUD_INIT="yes"
+  else
+    echo -e "${CLOUD}${BOLD}${DGN}Configure Cloud-init: ${BGN}no${CL}"
+    CLOUD_INIT="no"
+  fi
+
   if (whiptail --backtitle "Proxmox VE Helper Scripts" --title "START VIRTUAL MACHINE" --yesno "Start VM when completed?" 10 58); then
     echo -e "${GATEWAY}${BOLD}${DGN}Start VM when completed: ${BGN}yes${CL}"
     START_VM="yes"
@@ -442,9 +474,11 @@ fi
 msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for Storage Location."
 msg_ok "Virtual Machine ID is ${CL}${BL}$VMID${CL}."
 msg_info "Retrieving the URL for the Debian 12 Qcow2 Disk Image"
-
-URL=https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
-
+if [ "$CLOUD_INIT" == "yes" ]; then
+  URL=https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
+else
+  URL=https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-nocloud-amd64.qcow2
+fi
 sleep 2
 msg_ok "${CL}${BL}${URL}${CL}"
 curl -f#SL -o "$(basename "$URL")" "$URL"
@@ -479,14 +513,20 @@ qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} 
   -name $HN -tags community-script -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci
 pvesm alloc $STORAGE $VMID $DISK0 4M 1>&/dev/null
 qm importdisk $VMID ${FILE} $STORAGE ${DISK_IMPORT:-} 1>&/dev/null
-
-qm set $VMID \
--efidisk0 ${DISK0_REF}${FORMAT} \
--scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=${DISK_SIZE} \
--scsi1 ${STORAGE}:cloudinit \
--boot order=scsi0 \
--serial0 socket >/dev/null
-
+if [ "$CLOUD_INIT" == "yes" ]; then
+  qm set $VMID \
+    -efidisk0 ${DISK0_REF}${FORMAT} \
+    -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=${DISK_SIZE} \
+    -scsi1 ${STORAGE}:cloudinit \
+    -boot order=scsi0 \
+    -serial0 socket >/dev/null
+else
+  qm set $VMID \
+    -efidisk0 ${DISK0_REF}${FORMAT} \
+    -scsi0 ${DISK1_REF},${DISK_CACHE}${THIN}size=${DISK_SIZE} \
+    -boot order=scsi0 \
+    -serial0 socket >/dev/null
+fi
 DESCRIPTION=$(
   cat <<EOF
 <div align='center'>
